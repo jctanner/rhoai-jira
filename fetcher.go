@@ -17,9 +17,11 @@ import (
 )
 
 var (
-	project = flag.String("project", "", "Jira project key (e.g., ABC)")
-	token   = flag.String("token", "", "Jira API token (or fallback to JIRA_TOKEN env var)")
-	baseURL = flag.String("base-url", "", "Base URL (e.g. https://issues.redhat.com)")
+	project       = flag.String("project", "", "Jira project key (e.g., ABC)")
+	token         = flag.String("token", "", "Jira API token (or fallback to JIRA_TOKEN env var)")
+	baseURL       = flag.String("base-url", "", "Base URL (e.g. https://issues.redhat.com)")
+	lookbackHours = flag.Int("lookback-hours", 0, "How many hours to look back from the last known updated timestamp")
+	forceUpdate   = flag.Bool("force-update", false, "force refetch -every- issue")
 )
 
 type UpdatedIssue struct {
@@ -46,7 +48,8 @@ func main() {
 	}
 
 	// Step 3: Find latest updated timestamp
-	latestUpdate := findLatestUpdatedTimestamp(outputDir, *project)
+	//latestUpdate := findLatestUpdatedTimestamp(outputDir, *project)
+	latestUpdate := findLatestUpdatedTimestamp(outputDir, *project).Add(-time.Duration(*lookbackHours) * time.Hour)
 	log.Printf("Most recent updated timestamp: %s", latestUpdate.Format(time.RFC3339))
 
 	// Step 4: Fetch updated issues
@@ -95,6 +98,20 @@ func main() {
 				deniedFile := path.Join(outputDir, fmt.Sprintf("%s.denied", issueKey))
 				_ = os.WriteFile(deniedFile, []byte("denied"), 0644)
 				log.Printf("marked %s as denied", issueKey)
+			}
+		}
+	}
+
+	if *forceUpdate == true {
+		for i := maxNumber; i >= 1; i-- {
+			issueKey := fmt.Sprintf("%s-%d", strings.ToUpper(*project), i)
+			if err := fetchAndSaveIssueWithChangelog(issueKey, *baseURL, *token, outputDir); err != nil {
+				log.Printf("error processing %s: %v", issueKey, err)
+				if strings.Contains(err.Error(), "403") {
+					deniedFile := path.Join(outputDir, fmt.Sprintf("%s.denied", issueKey))
+					_ = os.WriteFile(deniedFile, []byte("denied"), 0644)
+					log.Printf("marked %s as denied", issueKey)
+				}
 			}
 		}
 	}
@@ -214,8 +231,11 @@ func doGetWithRetry(url string, token string) ([]byte, error) {
 	var err error
 
 	for attempt := 1; attempt <= 5; attempt++ {
-		log.Printf("GET %s (attempt %d)", url, attempt)
-
+		if attempt == 1 {
+			log.Printf("GET %s", url)
+		} else {
+			log.Printf("GET %s (attempt %d)", url, attempt)
+		}
 		req, reqErr := http.NewRequest("GET", url, nil)
 		if reqErr != nil {
 			return nil, fmt.Errorf("failed to create request: %w", reqErr)
@@ -319,7 +339,8 @@ func findLatestUpdatedTimestamp(dirpath string, project string) time.Time {
 		if !ok {
 			return nil
 		}
-		updatedTime, err := time.Parse(time.RFC3339, updatedStr)
+		// updatedTime, err := time.Parse(time.RFC3339, updatedStr)
+		updatedTime, err := time.Parse("2006-01-02T15:04:05.000-0700", updatedStr)
 		if err != nil {
 			return nil
 		}
