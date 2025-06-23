@@ -116,11 +116,18 @@ func LookupSprintIDByName(baseURL, token, project, sprintName, sprintField strin
 	}
 
 	for _, issue := range result.Issues {
-		for _, sprintStr := range issue.Fields.Sprints {
-			sprint, err := ParseSprintString(sprintStr)
-			if err != nil {
-				continue
+		/*
+			for _, sprintStr := range issue.Fields.Sprints {
+				sprint, err := ParseSprintString(sprintStr)
+				if err != nil {
+					continue
+				}
+				if sprint.Name == sprintName {
+					return sprint.ID, nil
+				}
 			}
+		*/
+		for _, sprint := range issue.Fields.Sprints {
 			if sprint.Name == sprintName {
 				return sprint.ID, nil
 			}
@@ -172,7 +179,6 @@ func FetchAndSaveIssueWithChangelog(issueKey, baseURL, token, outputDir string) 
 
 	return nil
 }
-
 
 func QueryUpdatedIssues(baseURL, token, project string, since time.Time) []UpdatedIssue {
 	var results []UpdatedIssue
@@ -255,7 +261,6 @@ func QueryUpdatedIssues(baseURL, token, project string, since time.Time) []Updat
 	log.Printf("Total updated issues to refetch: %d", len(results))
 	return results
 }
-
 
 func GetIssuesInSprint(outputDir string, baseURL string, token string, project string, sprintName string) ([]UpdatedIssue, error) {
 	var results []UpdatedIssue

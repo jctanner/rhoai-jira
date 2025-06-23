@@ -16,6 +16,7 @@ import (
 	"github.com/jctanner/rhoai-jira/internal/jira"
 )
 
+/*
 type HistoryItem struct {
 	Field      string `json:"field"`
 	ToString   string `json:"toString"`
@@ -30,6 +31,7 @@ type HistoryEntry struct {
 type Changelog struct {
 	Histories []HistoryEntry `json:"histories"`
 }
+*/
 
 type SprintWindow struct {
 	Sprint   string
@@ -67,6 +69,7 @@ func timeFormatFor(d time.Duration) string {
 
 func main() {
 	dir := flag.String("dir", "issues", "Directory containing *.changelog.json files")
+	project := flag.String("project", "", "filter on a specific project")
 	out := flag.String("out", "", "Output CSV file (omit to print to stdout)")
 	sprintFilter := flag.String("sprint-filter", "", "If set, only include this sprint in output")
 	intervalStr := flag.String("interval", "daily", "Time interval (daily, hourly, minutely)")
@@ -91,49 +94,107 @@ func main() {
 		if err != nil {
 			return err
 		}
-		if info.IsDir() || !strings.HasSuffix(path, ".changelog.json") {
+		if info.IsDir() {
 			return nil
 		}
 
-		data, err := os.ReadFile(path)
+		if strings.HasSuffix(path, ".changelog.json") {
+			return nil
+		}
+
+		if strings.HasSuffix(path, ".denied") {
+			return nil
+		}
+
+		if strings.HasSuffix(path, ".swp") {
+			return nil
+		}
+
+		// load the issue data
+		issueData, err := os.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("failed to read %s: %w", path, err)
 		}
-
-		var changelog Changelog
-		if err := json.Unmarshal(data, &changelog); err != nil {
-			return fmt.Errorf("failed to parse JSON in %s: %w", path, err)
-		}
-
-		issueKey := strings.TrimSuffix(filepath.Base(path), ".changelog.json")
-		if *debugLog {
-			fmt.Printf("%s\n", issueKey)
-		}
-
-		issueFile := *dir + "/" + issueKey + ".json"
-		issueRaw, err := os.ReadFile(issueFile)
-		if err != nil {
-			return fmt.Errorf("failed to read %s: %w", issueFile, err)
-		}		
-		var issueData jira.JiraIssue
-		if err := json.Unmarshal(data, &issueRaw); err != nil {
+		var issue jira.JiraIssueWithSprints
+		if err := json.Unmarshal(issueData, &issue); err != nil {
 			return fmt.Errorf("parse json: %s %w", path, err)
 		}
 
-		inSprint := false
-		for _, sprintraw := range issueData.Fields.Sprints {
-			//fmt.Println(sprint)
-			sprint, err := jira.ParseSprintString(sprintraw)
+		if *project != "" && issue.Fields.Project.Key != *project {
+			return nil
+		}
+
+		if *debugLog {
+			fmt.Printf("%s %s %s %s\n", issue.Key, issue.Fields.Status.Name, issue.Fields.IssueType.Name, issue.Fields.Parent.Key)
+		}
+
+		// load the changelog ...
+		changelog, err := jira.GetIssueChangelogFromCache(*dir, issue.Key)
+		if err != nil {
+			return err
+		}
+
+		// check if this issue's changelog has sprint events
+		foundSprintEvents := false
+		for _, h := range changelog.Histories {
+			_, err := time.Parse("2006-01-02T15:04:05.000-0700", h.Created)
 			if err != nil {
 				continue
 			}
-			//fmt.Println(sprint.Name)
-			if sprint.Name == *sprintFilter {
-				inSprint = true
+			for _, item := range h.Items {
+				if item.Field != "Sprint" {
+					continue
+				}
+				foundSprintEvents = true
+				//fmt.Printf("\t%s\n", item)
 				break
 			}
 		}
 
+		// try the parent issue if this one has no events ...
+		if !foundSprintEvents {
+			if issue.Fields.Parent.Key != "" {
+				parentChangelog, err := jira.GetIssueChangelogFromCache(*dir, issue.Fields.Parent.Key)
+				if err != nil {
+					return err
+				}
+				for _, h := range parentChangelog.Histories {
+					_, err := time.Parse("2006-01-02T15:04:05.000-0700", h.Created)
+					if err != nil {
+						continue
+					}
+					for _, item := range h.Items {
+						if item.Field != "Sprint" {
+							continue
+						}
+						foundSprintEvents = true
+						break
+					}
+				}
+
+				if foundSprintEvents {
+					changelog = parentChangelog
+				}
+			}
+
+		}
+
+		// if not events were found anywhere, assume that the sprint was set at issue creation time
+		//	https://community.atlassian.com/forums/Jira-questions/API-changelog-for-Bug-does-not-include-sprint-information/qaq-p/975650
+		if !foundSprintEvents && len(issue.Fields.Sprints) > 0 {
+
+			if *debugLog {
+				fmt.Printf("\tcreating fake changelog for missing sprint history")
+			}
+
+			// make a fake changelog from the issue data ...
+			tmpChangelog, err := jira.ToChangelog(issue)
+			if err != nil {
+				fmt.Printf("ERROR: %s", err)
+			}
+			changelog = *tmpChangelog
+
+		}
 
 		for _, h := range changelog.Histories {
 			t, err := time.Parse("2006-01-02T15:04:05.000-0700", h.Created)
@@ -144,7 +205,7 @@ func main() {
 			for _, item := range h.Items {
 				if item.Field == "Sprint" {
 					if item.FromString != "" {
-						k := SprintKey{IssueKey: issueKey, Sprint: item.FromString}
+						k := SprintKey{IssueKey: issue.Key, Sprint: item.FromString}
 						windows := sprintWindows[k]
 						if len(windows) > 0 {
 							last := &windows[len(windows)-1]
@@ -155,9 +216,9 @@ func main() {
 						}
 					}
 					if item.ToString != "" && (*sprintFilter == "" || item.ToString == *sprintFilter) {
-						points := storyPoints[issueKey]
-						status := statuses[issueKey]
-						k := SprintKey{IssueKey: issueKey, Sprint: item.ToString}
+						points := storyPoints[issue.Key]
+						status := statuses[issue.Key]
+						k := SprintKey{IssueKey: issue.Key, Sprint: item.ToString}
 						sprintWindows[k] = append(sprintWindows[k], SprintWindow{
 							Sprint:   item.ToString,
 							FromTime: t,
@@ -168,13 +229,14 @@ func main() {
 					}
 				} else if item.Field == "Story Points" && item.ToString != "" {
 					if pts, err := strconv.ParseFloat(item.ToString, 64); err == nil {
-						storyPoints[issueKey] = pts
+						storyPoints[issue.Key] = pts
 					}
 				} else if item.Field == "status" && item.ToString != "" {
-					statuses[issueKey] = item.ToString
+					statuses[issue.Key] = item.ToString
 				}
 			}
 		}
+
 		return nil
 	})
 	if err != nil {
@@ -223,7 +285,7 @@ func main() {
 		return keys[i].Timestamp < keys[j].Timestamp
 	})
 
-	statusesToTrack := []string{"Backlog", "In Progress", "Review", "Testing", "Resolved"}
+	statusesToTrack := []string{"Backlog", "In Progress", "Review", "Testing", "Resolved", "Closed"}
 
 	var writer *csv.Writer
 	if *out != "" {
@@ -254,4 +316,5 @@ func main() {
 		writer.Write(row)
 	}
 	writer.Flush()
+
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Sprint struct {
@@ -20,6 +21,14 @@ type Sprint struct {
 	Synced                      bool    `json:"synced"`
 	AutoStartStop               bool    `json:"autoStartStop"`
 	IncompleteIssuesDestination *string `json:"incompleteIssuesDestinationId,omitempty"`
+}
+
+type SprintWindow struct {
+	Sprint   string
+	FromTime time.Time
+	ToTime   *time.Time
+	Points   float64
+	Status   string
 }
 
 func ParseSprintString(s string) (*Sprint, error) {
@@ -78,3 +87,27 @@ func ParseSprintString(s string) (*Sprint, error) {
 
 	return &result, nil
 }
+
+/*
+func SprintToWindow(s Sprint) (*SprintWindow, error) {
+	start, err := time.Parse(timeLayout, s.StartDate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid startDate: %v", err)
+	}
+
+	var end *time.Time
+	if s.EndDate != "" {
+		if t, err := time.Parse(timeLayout, s.EndDate); err == nil {
+			end = &t
+		}
+	}
+
+	return &SprintWindow{
+		Sprint:   s.Name,
+		FromTime: start,
+		ToTime:   end,
+		Points:   0,       // You can fill this in later
+		Status:   s.State, // ACTIVE, CLOSED, FUTURE
+	}, nil
+}
+*/

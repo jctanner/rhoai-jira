@@ -36,11 +36,7 @@ func LookupSprintIDFromDisk(dir, project, sprintName string, sprintField string)
 			continue
 		}
 
-		for _, sprintStr := range issue.Fields.Sprints {
-			sprint, err := ParseSprintString(sprintStr)
-			if err != nil {
-				continue
-			}
+		for _, sprint := range issue.Fields.Sprints {
 			if sprint.Name == sprintName {
 				return sprint.ID, nil
 			}
@@ -142,13 +138,12 @@ func FindLatestUpdatedTimestamp(dirpath string, project string) time.Time {
 	return latest
 }
 
-
 func FilterRecentlyFetchedIssues(dir string, keys []string, window time.Duration) []string {
 	var remaining []string
 	cutoff := time.Now().Add(-window)
 
 	for _, key := range keys {
-		fullPath := filepath.Join(dir, key + ".json")
+		fullPath := filepath.Join(dir, key+".json")
 
 		data, err := os.ReadFile(fullPath)
 		if err != nil {
@@ -182,4 +177,19 @@ func FilterRecentlyFetchedIssues(dir string, keys []string, window time.Duration
 		remaining = append(remaining, key)
 	}
 	return remaining
+}
+
+func GetIssueChangelogFromCache(dir string, key string) (Changelog, error) {
+	var changelog Changelog
+	changelogPath := dir + "/" + key + ".changelog.json"
+	changelogData, err := os.ReadFile(changelogPath)
+	if err != nil {
+		return changelog, err
+	}
+
+	if err := json.Unmarshal(changelogData, &changelog); err != nil {
+		return changelog, err
+	}
+
+	return changelog, nil
 }
