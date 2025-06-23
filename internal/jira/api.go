@@ -185,7 +185,7 @@ func QueryUpdatedIssues(baseURL, token, project string, since time.Time) []Updat
 		jql := fmt.Sprintf("project = %s AND updated >= \"%s\" ORDER BY updated DESC", project, since.UTC().Format("2006-01-02 15:04"))
 		rawURL := fmt.Sprintf("%s/rest/api/2/search?jql=%s&fields=key,updated&startAt=%d&maxResults=%d", baseURL, url.QueryEscape(jql), startAt, pageSize)
 
-		body, err := jira.DoGetWithRetry(rawURL, token)
+		body, err := DoGetWithRetry(rawURL, token)
 		if err != nil {
 			log.Fatalf("failed to query updated issues: %v", err)
 		}

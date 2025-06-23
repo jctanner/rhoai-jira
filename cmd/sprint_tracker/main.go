@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jctanner/rhoai-jira/internal/jira"
 )
 
 type HistoryItem struct {
@@ -68,6 +70,7 @@ func main() {
 	out := flag.String("out", "", "Output CSV file (omit to print to stdout)")
 	sprintFilter := flag.String("sprint-filter", "", "If set, only include this sprint in output")
 	intervalStr := flag.String("interval", "daily", "Time interval (daily, hourly, minutely)")
+	debugLog := flag.Bool("debug", false, "show debug logging")
 	flag.Parse()
 
 	intervalDur, err := parseInterval(*intervalStr)
@@ -103,6 +106,34 @@ func main() {
 		}
 
 		issueKey := strings.TrimSuffix(filepath.Base(path), ".changelog.json")
+		if *debugLog {
+			fmt.Printf("%s\n", issueKey)
+		}
+
+		issueFile := *dir + "/" + issueKey + ".json"
+		issueRaw, err := os.ReadFile(issueFile)
+		if err != nil {
+			return fmt.Errorf("failed to read %s: %w", issueFile, err)
+		}		
+		var issueData jira.JiraIssue
+		if err := json.Unmarshal(data, &issueRaw); err != nil {
+			return fmt.Errorf("parse json: %s %w", path, err)
+		}
+
+		inSprint := false
+		for _, sprintraw := range issueData.Fields.Sprints {
+			//fmt.Println(sprint)
+			sprint, err := jira.ParseSprintString(sprintraw)
+			if err != nil {
+				continue
+			}
+			//fmt.Println(sprint.Name)
+			if sprint.Name == *sprintFilter {
+				inSprint = true
+				break
+			}
+		}
+
 
 		for _, h := range changelog.Histories {
 			t, err := time.Parse("2006-01-02T15:04:05.000-0700", h.Created)

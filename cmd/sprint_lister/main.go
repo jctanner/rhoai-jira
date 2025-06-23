@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/jctanner/rhoai-jira/internal/jira"
 )
 
 type JiraIssue struct {
@@ -76,7 +78,7 @@ func main() {
 
 		for _, sprintraw := range issueData.Fields.Sprints {
 			//fmt.Println(sprint)
-			sprint, err := ParseSprintString(sprintraw)
+			sprint, err := jira.ParseSprintString(sprintraw)
 			if err != nil {
 				continue
 			}
@@ -95,7 +97,7 @@ func main() {
 
 	sortNumerically(matchedKeys)
 	for ix, key := range matchedKeys {
-		fmt.Printf("%d. %s\n", ix, key)
+		fmt.Printf("%d,%s\n", ix, key)
 	}
 
 }
