@@ -61,6 +61,20 @@ func GetAllProjectIssueKeys(dir, project string) []string {
 	return keys
 }
 
+func GetAllCachedIssueKeys(dir string) []string {
+	var keys []string
+
+	entries, _ := os.ReadDir(dir)
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasSuffix(name, ".json") && !strings.HasSuffix(name, ".changelog.json") && !strings.HasSuffix(name, ".denied") {
+			key := strings.TrimSuffix(name, ".json")
+			keys = append(keys, key)
+		}
+	}
+	return keys
+}
+
 func GetProjectNumbersOnDisk(dir, project string) map[int]struct{} {
 	found := make(map[int]struct{})
 
@@ -192,4 +206,18 @@ func GetIssueChangelogFromCache(dir string, key string) (Changelog, error) {
 	}
 
 	return changelog, nil
+}
+
+func GetIssueFromCache(dir string, key string) JiraIssueWithSprints {
+	var issueData JiraIssueWithSprints
+	path := dir + "/" + key + ".json"
+	issueData, err := os.ReadFile(path)
+	if err != nil {
+		return issueData, fmt.Errorf("failed to read %s: %w", path, err)
+	}
+	var issue jira.JiraIssueWithSprints
+	if err := json.Unmarshal(issueData, &issue); err != nil {
+		return issueData, fmt.Errorf("parse json: %s %w", path, err)
+	}
+	return issueData, nil
 }
